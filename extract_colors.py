@@ -2,6 +2,7 @@ import colorsys
 import json
 import re
 import xml.etree.ElementTree as et
+from functools import lru_cache
 
 
 def get_color_string_ids():
@@ -61,6 +62,7 @@ def parse_smali():
             yield (v1, v2)
 
 
+@lru_cache(maxsize=None)
 def hex2rgb(h):
     return [int(c, 16) for c in (h[1:3], h[3:5], h[5:7])]
 
@@ -72,15 +74,19 @@ def is_dark(hex):
 
 def get_sort_order(hex):
     r, g, b = [c / 255 for c in hex2rgb(hex)]
-    h, s, v = colorsys.rgb_to_hsv(r, g, b)
-    return (int(h * 6), -s)
+    h, l, s = colorsys.rgb_to_hls(r, g, b)
+    # y, i, q = colorsys.rgb_to_yiq(r, g, b)
+    if s < 0.4:  # desaturated colors: sort by value
+        return (0, l)
+    hx, hq = divmod(h * 6, 1)
+    return (1, hx, l * (1 if hx % 2 else -1))
 
 
 HTML_PRELUDE = """
 <html>
 <style>
 body{display:flex;flex-wrap:wrap;font-family:sans-serif}
-div{flex:1;max-width: 10vw;min-width: 5em;margin:.5em;padding:3px;text-align:center;border-radius:2px}
+div{flex:1;max-width: 10vw;min-width: 5em;margin:6px;padding:3px;text-align:center;border-radius:2px}
 .d{color:#fff}
 </style>
 <body>
@@ -101,7 +107,7 @@ def write_outputs(name_to_color_map):
         for name, color in sorted(name_to_color_map.items(), key=lambda pair: get_sort_order(pair[1])):
             cls = "d" if is_dark(color) else "l"
             print(
-                f'<div style="background: {color}" class="{cls}"\'>{name}</div>',
+                f'<div style="background: {color}" class="{cls}">{name}</div>',
                 file=outf,
             )
         print("</body></html>", file=outf)
